@@ -224,20 +224,20 @@ namespace NINA.Joko.Plugin.Orbitals.Calculations {
             }
         }
 
-        [DllImport("NOVAS31lib.dll", CallingConvention = CallingConvention.Cdecl, EntryPoint = "equ2ecl_vec")]
+        [DllImport("libnovas_c.so", CallingConvention = CallingConvention.Cdecl, EntryPoint = "equ2ecl_vec")]
         private static extern short NOVAS_Equ2Ecl_vec(
             double tjd,
             NOVAS.CoordinateSystem coordSys,
             NOVAS.Accuracy accuracy,
-            PosVector pos,
+            ref PosVector pos,
             ref PosVector outputPos);
 
-        [DllImport("NOVAS31lib.dll", CallingConvention = CallingConvention.Cdecl, EntryPoint = "ecl2equ_vec")]
+        [DllImport("libnovas_c.so", CallingConvention = CallingConvention.Cdecl, EntryPoint = "ecl2equ_vec")]
         private static extern short NOVAS_Ecl2Equ_vec(
             double tjd,
             NOVAS.CoordinateSystem coordSys,
             NOVAS.Accuracy accuracy,
-            PosVector pos,
+            ref PosVector pos,
             ref PosVector outputPos);
 
         public static RectangularCoordinates GetApparentPosition(
@@ -251,10 +251,12 @@ namespace NINA.Joko.Plugin.Orbitals.Calculations {
             var pvOnSurface = GetPVOnEarthSurface(asof, latitude, longitude, elevation);
 
             var outputV = default(PosVector);
-            NOVAS_Equ2Ecl_vec(SOFA.J2000_jd, NOVAS.CoordinateSystem.CIOOfDate, NOVAS.Accuracy.Full, PosVector.From(centerPosition.Position), ref outputV);
+            var centerPosV = PosVector.From(centerPosition.Position);
+            NOVAS_Equ2Ecl_vec(SOFA.J2000_jd, NOVAS.CoordinateSystem.CIOOfDate, NOVAS.Accuracy.Full, ref centerPosV, ref outputV);
             var earthEclipticPosition = outputV.ToRectangularCoordinates();
             var objectPosition = orbitalPosition.EclipticCoordinates - (earthEclipticPosition + pvOnSurface.Position);
-            NOVAS_Ecl2Equ_vec(SOFA.J2000_jd, NOVAS.CoordinateSystem.CIOOfDate, NOVAS.Accuracy.Full, PosVector.From(objectPosition), ref outputV);
+            var objectPosV = PosVector.From(objectPosition);
+            NOVAS_Ecl2Equ_vec(SOFA.J2000_jd, NOVAS.CoordinateSystem.CIOOfDate, NOVAS.Accuracy.Full, ref objectPosV, ref outputV);
             return outputV.ToRectangularCoordinates();
         }
 

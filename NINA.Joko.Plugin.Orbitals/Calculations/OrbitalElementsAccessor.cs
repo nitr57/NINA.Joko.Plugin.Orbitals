@@ -274,10 +274,32 @@ namespace NINA.Joko.Plugin.Orbitals.Calculations {
             var startPosition = NOVAS.BodyPositionAndVelocity(jdtt, solarSystemBody.ToNOVAS(), NOVAS.SolarSystemOrigin.SolarCenterOfMass);
             var earthPosition = NOVAS.BodyPositionAndVelocity(jdtt, NOVAS.Body.Earth, NOVAS.SolarSystemOrigin.SolarCenterOfMass);
             var earthCenteredPosition = startPosition.Position - earthPosition.Position;
-            var startCoordinates = NOVAS.PlanetApparentCoordinates(jdtt, solarSystemBody.ToNOVAS());
-            var nextCoordinates = NOVAS.PlanetApparentCoordinates(jdtt + AstrometricConstants.JD_SEC * rateDriftDelta.TotalSeconds, solarSystemBody.ToNOVAS());
+            var startCoordinates = PlanetApparentCoordinatesViaPlace(jdtt, solarSystemBody.ToNOVAS());
+            var nextCoordinates = PlanetApparentCoordinatesViaPlace(jdtt + AstrometricConstants.JD_SEC * rateDriftDelta.TotalSeconds, solarSystemBody.ToNOVAS());
             var trackingRate = SiderealShiftTrackingRate.Create(startCoordinates, nextCoordinates, rateDriftDelta);
             return new OrbitalPositionVelocity(asof, earthCenteredPosition, null, startCoordinates, trackingRate);
+        }
+
+        // NOVAS.PlanetApparentCoordinates is broken on Linux: its private P/Invokes (make_object, app_planet)
+        // pass CatalogueEntry/CelestialObject by value, but the C functions expect pointers.
+        // NOVAS.Place already passes structs correctly (by ref internally), so we replicate app_planet
+        // by constructing the CelestialObject directly and calling Place with a geocenter observer.
+        private static Coordinates PlanetApparentCoordinatesViaPlace(double jdtt, NOVAS.Body body) {
+            var celestialObject = new NOVAS.CelestialObject {
+                Type = (short)NOVAS.ObjectType.MajorPlanetSunOrMoon,
+                Number = (short)body,
+                Name = body.ToString(),
+                Star = new NOVAS.CatalogueEntry { StarName = "DUMMY", Catalog = "xxx" },
+            };
+            var observer = new NOVAS.Observer { Where = 0 }; // geocenter
+            var position = new NOVAS.SkyPosition { RHat = new double[3] };
+            var asof = NOVAS.JulianToDateTime(jdtt);
+            var deltaT = AstroUtil.DeltaT(asof);
+            var result = NOVAS.Place(jdtt, celestialObject, observer, deltaT, NOVAS.CoordinateSystem.EquinoxOfDate, NOVAS.Accuracy.Full, ref position);
+            if (result != 0) {
+                throw new Exception($"NOVAS Place failed for {body}. Result={result}");
+            }
+            return new Coordinates(Angle.ByHours(position.RA), Angle.ByDegree(position.Dec), Epoch.JNOW, asof);
         }
 
         public OrbitalPositionVelocity GetObjectPV(DateTime asof, OrbitalElements orbitalElements, Angle latitude, Angle longitude, double elevation, TimeSpan rateDriftDelta) {
